@@ -1,0 +1,166 @@
+---
+title: "Study of impact of weather events on public health and the economy."
+author: "Farah M"
+date: "8/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Synopsis
+
+This report indicates which weather type event creates the biggest economic consequenses and have the biggest impact to public health across The United States of America.
+The data used for prosessing is provided by NOAA storm database. The data in this report is aggregated by the event type for damage and health indicators.
+The result set shows that the Tornadoes have the greatest human cost, while Floods have the biggest economical consequences.
+
+
+## Data Processing
+
+### 1. Extract and load the data
+
+```{r}
+# Download zip file if it doesn't exist in the working directory.
+if(!file.exists("StormData.csv.bz2")){
+    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", destfile = "StormData.csv.bz2", method = "curl")
+}
+
+#Read file
+stormData <- read.csv("StormData.csv.bz2", stringsAsFactors = FALSE)
+```
+
+### 2. Transformations
+
+1. Have a look at the structure of the dataset.  
+The columns that are used to produce this report are:
+
+* `EVTYPE` - the type of the weather phenomena event.
+* `FATALITIES` - number of fatalities.
+* `INJURIES` - number of injuries.
+* `PROPDMG` - estimate of property damage.
+* `PROPDMGEXP` - magnitude / exponent of property damage.
+* `CROPDMG`- estimate of crop damage.
+* `CROPDMGEXP` - magnitude / exponent of crop damage.
+
+
+Start by loading the dplyr library, then select only the columns that we want to use.
+
+```{r}
+library(dplyr)
+stormData <- select(stormData, EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
+
+# Show the structure of the dataset.
+str(stormData)
+```
+
+
+2. First, we have to get the dollar values for the estimates of the property damage and crop damage. 
+
+```{r}
+# Create a conversion table 
+expFac <- data.frame(c("","B","m","M","K","H","h", "1","2","3","4","5","6","7","8","0","+","-","?","k"),
+                        c(1,1e+09,1e+06,1e+06,1000,100,100,10,100,1000,10000,1e+05,1e+06,1e+07,1e+08,
+                          1,0,0,0,1000))
+
+# Extract property and crop damage data
+PD <- stormData$PROPDMG
+PDE <- stormData$PROPDMGEXP
+CD <- stormData$CROPDMG
+CDE <- stormData$CROPDMGEXP
+
+# Create new variables and populate the value of the damage to property and crops
+rows <- length(PD)
+PROPDMGVAL <- 1:rows
+CROPDMGVAL <- 1:rows
+
+for(i in 1:rows){
+      PROPDMGVAL[i] <- PD[i] * expFac[expFac[,1] == PDE[i],2]
+      CROPDMGVAL[i] <- CD[i] * expFac[expFac[,1] == CDE[i],2]
+}
+
+# Add values of damages to stormData  
+stormData <- cbind(stormData, PROPDMGVAL) 
+stormData <- cbind(stormData, CROPDMGVAL) 
+
+```
+
+
+3. Sum human costs and economical costs of the events.
+```{r}
+stormData$HCOST <- stormData$FATALITIES + stormData$INJURIES
+stormData$ECOST <- stormData$PROPDMGVAL + stormData$CROPDMGVAL
+```
+
+
+4. Subset the data to aggregate the human costs and the economical costs of the events.
+```{r}
+h_cost <- subset(stormData, select = c(EVTYPE, FATALITIES, INJURIES, HCOST ))
+e_cost <- subset(stormData, select = c(EVTYPE, PROPDMGVAL, CROPDMGVAL, ECOST))
+```
+
+
+5. Aggregate the costs by events, and sort by descending order.
+```{r}
+# Aggregates for fatalities and injuries
+totFatalities <- aggregate(FATALITIES ~ EVTYPE, data = h_cost, FUN = sum)
+totFatalities <- arrange(totFatalities, desc(FATALITIES))
+totInjuries <- aggregate(INJURIES ~ EVTYPE, data = h_cost, FUN = sum)
+totInjuries <- arrange(totInjuries, desc(INJURIES))
+totHCost <- aggregate(HCOST ~ EVTYPE, data = h_cost, FUN = sum)
+totHCost <- arrange(totHCost, desc(HCOST))
+
+# Aggregates for property and crop damage
+totPropDmg <- aggregate(PROPDMGVAL ~ EVTYPE, data = h_cost, FUN = sum)
+totPropDmg <- arrange(totPropDmg, desc(PROPDMGVAL))
+totCropDmg <- aggregate(CROPDMGVAL ~ EVTYPE, data = h_cost, FUN = sum)
+totCropDmg <- arrange(totCropDmg, desc(CROPDMGVAL))
+totECost <- aggregate(ECOST ~ EVTYPE, data = e_cost, FUN = sum)
+totECost <- arrange(totECost, desc(ECOST))
+```
+
+
+## Results
+
+### Questions to answer:
+1. Across the United States, which types of events (as indicated in the \color{red}{\verb|EVTYPE|}EVTYPE variable) are most harmful with respect to population health?
+
+```{r}
+head(totFatalities)
+head(totInjuries)
+head(totHCost)
+```
+
+From the tables, we can deduce that Tornadoes are the most harmfulwith respect to population health.
+
+
+
+2. Across the United States, which types of events have the greatest economic consequences?
+```{r}
+head(totPropDmg)
+head(totCropDmg)
+head(totECost)
+```
+
+From the tables, eventhough Droughts cause more Crop Damage then Floods, when added to the Property Damage, Floods cause the greatest overall economic consequences.
+
+
+### Plot Data
+
+The plot below shows the Top 10 Total Human Costs (Fatalities + Injuries) by Types of Weather Event.
+```{r}
+par(mar= c(8, 5, 4, 2) + 0.1)
+barplot(height = totHCost$HCOST[1:10], names.arg = totHCost$EVTYPE[1:10], las = 2, cex.names= 0.7, col = heat.colors (10), main = "Top 10 Total Human Costs (Fatalities + Injuries) by Event Type")
+```
+
+
+The plot below shows the types of weather events which cause the most economic consequences.
+```{r}
+par(mar= c(8, 6, 4, 2) + 0.1)
+barplot(height = totECost$ECOST[1:10], names.arg = totECost$EVTYPE[1:10], las = 2, cex.names= 0.7, col = heat.colors (10), main = "Top 10 Total Economic Costs (Property + Crop) by Event Type")
+```
+
+
+## Conclusions
+
+The result set shows that the Tornadoes have the greatest human cost, while Floods have the biggest economical consequences.
